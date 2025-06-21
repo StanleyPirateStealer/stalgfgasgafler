@@ -15,13 +15,18 @@ const axios = require("axios");
 const mongoUri = configs.mongoUri;
 
 mongoose
-  .connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log(chalk.green("[MongoDB] Bağlantı başarılı")))
-  .catch((err) => console.error(chalk.red("[MongoDB] Bağlantı hatası:", err)));
+  .connect(mongoUri)
+  .then(() => {
+    console.log(chalk.green("[MongoDB] Bağlantı başarılı"));
 
+    // MongoDB bağlantısı tamamlandıktan sonra botu başlat
+    client.login(configs.token).catch(() => {
+      throw new Error(`TOKEN VEYA INTENTLER EKSİK`);
+    });
+  })
+  .catch((err) => {
+    console.error(chalk.red("[MongoDB] Bağlantı hatası:", err));
+  });
 const userSchema = new mongoose.Schema({
   username: String,
   userID: { type: String, unique: true },
@@ -200,8 +205,4 @@ client.on("ready", () => {
     ),
   );
   client.user.setActivity(`🔍・Sizi kontrol ediyor...`, { type: "WATCHING" });
-});
-
-client.login(configs.token).catch(() => {
-  throw new Error(`TOKEN VEYA INTENTLER EKSİK`);
 });
