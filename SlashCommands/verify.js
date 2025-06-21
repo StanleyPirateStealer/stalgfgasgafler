@@ -20,14 +20,15 @@ module.exports = {
       });
     }
 
+    // Interaction'ı hemen defferla ki 3 saniyede zaman aşımı olmasın
+    await interaction.deferReply({ ephemeral: true });
 
     const mongoClient = new MongoClient(configs.mongoUri, { useUnifiedTopology: true });
     try {
       await mongoClient.connect();
-      const db = mongoClient.db(); 
-      const usersCollection = db.collection("users");  
+      const db = mongoClient.db();
+      const usersCollection = db.collection("users");
 
-    
       const allUsers = await usersCollection.find({}).toArray();
       const totalUsers = allUsers.length;
 
@@ -35,7 +36,6 @@ module.exports = {
       let invalidCount = 0;
       let checkingCount = 0;
 
-   
       let embed1 = new EmbedBuilder()
         .setTitle("DURUM PANELİ")
         .setColor("000000")
@@ -43,10 +43,12 @@ module.exports = {
           `\`⌛\`・Kullanıcılar doğrulanıyor \`${checkingCount}\`/\`${totalUsers}\`...`
         );
 
-      let msg = await interaction.channel.send({ embeds: [embed1] });
-      await interaction.reply({
+      // Kanal mesajı gönder
+      const msg = await interaction.channel.send({ embeds: [embed1] });
+
+      // Defer sonrası cevap olarak mesajı güncelle
+      await interaction.editReply({
         content: "Kullanıcı doğrulama işlemi başlatıldı!",
-        ephemeral: true,
       });
 
       for (const user of allUsers) {
@@ -54,7 +56,7 @@ module.exports = {
           await new Promise((r) => setTimeout(r, 500));
           try {
             const response = await axios.get(
-              "https://discord.com/api/v6/users/@me",
+              "https://discord.com/api/v10/users/@me",
               { headers: { Authorization: `Bearer ${user.access_token}` } }
             );
             if (response.status === 200) {
@@ -65,10 +67,10 @@ module.exports = {
             if (status === 403 || status === 401) {
               invalidCount++;
             } else if (status === 401) {
-             
+              // Eğer erişim token geçersizse refresh token deneyebilirsin
               try {
                 const refreshResponse = await axios.post(
-                  "https://discord.com/api/v6/oauth2/token/refresh",
+                  "https://discord.com/api/v10/oauth2/token",
                   null,
                   { headers: { Authorization: `Bearer ${user.refresh_token}` } }
                 );
@@ -86,7 +88,7 @@ module.exports = {
         }
         checkingCount++;
 
-        if (checkingCount % 10 === 0) {
+        if (checkingCount % 10 === 0 || checkingCount === totalUsers) {
           embed1.setDescription(
             `\`⌛\`・Kullanıcılar doğrulanıyor \`${checkingCount}\`/\`${totalUsers}\`...`
           );
@@ -123,13 +125,15 @@ module.exports = {
       collector.on("collect", async (i) => {
         if (i.customId === "yes") {
           const validCollection = db.collection("validUsers");
-          await validCollection.deleteMany({}); 
-          await validCollection.insertMany(validUsers);
+          await validCollection.deleteMany({});
+          if (validUsers.length > 0) {
+            await validCollection.insertMany(validUsers);
+          }
           await i.reply({ content: "[BOT] Geçerli kullanıcılar veritabanına aktarıldı!", ephemeral: true });
-          await msg.delete();
+          await msg.delete().catch(() => {});
         } else if (i.customId === "no") {
           await i.reply({ content: "İşlem iptal edildi.", ephemeral: true });
-          await msg.delete();
+          await msg.delete().catch(() => {});
         }
         collector.stop();
       });
@@ -142,7 +146,12 @@ module.exports = {
 
     } catch (error) {
       console.error("Verify komutu hata:", error);
-      interaction.followUp({ content: "Bir hata oluştu.", ephemeral: true });
+      // Eğer interaction daha önce defer edilmişse followUp kullan, edilmediyse reply
+      if (interaction.deferred || interaction.replied) {
+        await interaction.followUp({ content: "Bir hata oluştu.", ephemeral: true });
+      } else {
+        await interaction.reply({ content: "Bir hata oluştu.", ephemeral: true });
+      }
     } finally {
       await mongoClient.close();
     }
